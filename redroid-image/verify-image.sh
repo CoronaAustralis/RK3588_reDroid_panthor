@@ -114,22 +114,23 @@ for f in dri/libgallium_dri.so egl/libEGL_mesa.so hw/vulkan.panfrost.so libgbm.s
 done
 
 echo "==================== 8. 注入库依赖与 GBM 动态入口 ===================="
-while IFS= read -r -d '' p; do
-  # 不只检查上游 gralloc；EGL/GBM 后端自身的依赖也必须能按裸名称加载。
+# 只检查本次替换的 Mesa 库。上游 ANGLE、VA 驱动等有自己的加载规则，
+# 不能因它们仍在 egl/dri 目录就套用本次 Mesa 依赖布局的断言。
+INJECTED=(
+  egl/libEGL_mesa.so egl/libGLESv1_CM_mesa.so egl/libGLESv2_mesa.so
+  dri/libgallium_dri.so gbm/dri_gbm.so
+  libgbm.so.1.0.0 hw/vulkan.panfrost.so libdrm.so libc++_shared.so
+)
+for f in "${INJECTED[@]}"; do
+  p="$L64/$f"
+  [ -f "$p" ] || continue  # 必需文件缺失已由第 1 节报告。
   while IFS= read -r nd; do
     mesa_family "$nd" || continue
     if resolve_in_vendor "$nd" >/dev/null; then
-      ok "${p#"$L64/"} -> $nd"
+      ok "$f -> $nd"
     else
-      bad "${p#"$L64/"} 的依赖不在 /vendor/lib64 搜索根目录: $nd"
+      bad "$f 的依赖不在 /vendor/lib64 搜索根目录: $nd"
     fi
-  done < <(needed_list "$p")
-done < <(find "$L64/egl" "$L64/dri" "$L64/gbm" -maxdepth 1 -type f -name '*.so*' -print0 2>/dev/null)
-for p in "$L64/libgbm.so.1.0.0" "$L64/hw/vulkan.panfrost.so"; do
-  [ -f "$p" ] || continue
-  while IFS= read -r nd; do
-    mesa_family "$nd" || continue
-    resolve_in_vendor "$nd" >/dev/null || bad "${p#"$L64/"}: 未解析 $nd"
   done < <(needed_list "$p")
 done
 if $READELF --dyn-syms -W "$L64/gbm/dri_gbm.so" 2>/dev/null |

@@ -52,6 +52,15 @@ patchelf --print-needed "$SRC/lib/gbm/dri_gbm.so" | grep -Fx libgbm_mesa.so.1 >/
 bash "$ROOT/redroid-image/verify-image.sh" "$T/overlay/vendor" > "$T/verify.log" || { cat "$T/verify.log"; exit 1; }
 echo 'PASS: complete backend, Gallium lookup and rewritten GBM dependency'
 
+# Base-image ANGLE is retained, not injected Mesa. Its sibling dependency in egl/
+# must not be mistaken for a missing Mesa library at the vendor root.
+gcc -shared -fPIC -nostdlib -Wl,-soname,libGLESv2_angle.so -o "$L64/egl/libGLESv2_angle.so" "$T/drm.c"
+for lib in libEGL_angle libGLESv1_CM_angle; do
+  gcc -shared -fPIC -nostdlib -Wl,-soname,"$lib.so" -Wl,--no-as-needed -o "$L64/egl/$lib.so" "$T/drm.c" -L"$L64/egl" -l:libGLESv2_angle.so
+done
+bash "$ROOT/redroid-image/verify-image.sh" "$T/overlay/vendor" > "$T/angle.log" || { cat "$T/angle.log"; exit 1; }
+echo 'PASS: retained ANGLE sibling dependencies are outside Mesa validation'
+
 expect_failure() {
   local label="$1" pattern="$2"; shift 2
   if "$@" > "$T/negative.log" 2>&1; then echo "FAIL: accepted $label" >&2; exit 1; fi
