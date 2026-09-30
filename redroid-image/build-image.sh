@@ -58,6 +58,7 @@ EGLDIR="$(find "$EXTRACT" -maxdepth 6 -type d -name egl -path '*/lib/egl' 2>/dev
 [ -n "$EGLDIR" ] || die "解析后未找到 */lib/egl 目录（Mesa 产物布局不符）"
 ARM64="$(dirname "$(dirname "$EGLDIR")")"   # 去掉尾部 /lib/egl
 [ -d "$ARM64/lib/egl" ] || die "定位异常：$ARM64/lib/egl 不存在"
+[ -f "$ARM64/lib/gbm/dri_gbm.so" ] || die "Mesa Release 缺 lib/gbm/dri_gbm.so；请先重新构建本仓库的 Mesa 产物"
 log "Mesa arm64 产物就绪：$ARM64"
 
 # --- 2) 拉 base 镜像（arm64）-------------------------------------------------
@@ -149,4 +150,4 @@ log "==== 汇总 ===="
 docker image inspect "$OUT_IMAGE" --format '  image : {{.Id}}{{"\n"}}  arch  : {{.Os}}/{{.Architecture}}{{"\n"}}  size  : {{.Size}} bytes{{"\n"}}  created: {{.Created}}'
 log "verify-image 退出码=$VERIFY_RC（0=通过）"
 [ "$VERIFY_RC" = "0" ] || die "镜像校验未通过，见 $WORK/verify-image.txt"
-log "✅ 产出可用镜像：$OUT_IMAGE"
+log "✅ 镜像静态校验通过：$OUT_IMAGE（仍需上板验证启动及 GPU 加速）"

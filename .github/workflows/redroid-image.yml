@@ -10,7 +10,7 @@ name: redroid-rk3588-panthor-image
 #   上游 reDroid 镜像已含 Android rootfs + gralloc.gbm/hwcomposer.redroid，
 #   我们只替换其中的 Mesa 栈（清单 6.3：gralloc/HWC 走上游不重建）。
 #
-# 触发：push 到 main 且改动 redroid-image/** 或本文件；或手动 Run workflow。
+# 触发：Mesa Release 完成后手动 Run workflow，避免与 Mesa push 构建并发。
 # 产物：GHCR 镜像 + Release（docker save 包 + verify-image.txt + build.log）。
 # =============================================================================
 
@@ -34,12 +34,7 @@ on:
         required: false
         type: boolean
         default: true
-  push:
-    branches:
-      - main
-    paths:
-      - 'redroid-image/**'
-      - '.github/workflows/redroid-image.yml'
+  # 镜像组装只手动触发：先等本仓库 Mesa Release 完成，避免 push 并发选到旧产物。
 
 permissions:
   contents: write   # 发布 Release
@@ -58,23 +53,27 @@ jobs:
         run: |
           set -x
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends patchelf binutils zstd xz-utils curl jq
+          sudo apt-get install -y --no-install-recommends patchelf binutils gcc zstd xz-utils curl jq
           uname -m; docker version --format 'client={{.Client.Version}} server={{.Server.Version}}'
           patchelf --version; readelf --version | head -1
           docker buildx version || true
+
+      - name: Test packaging regressions (real arm64 ELF fixtures)
+        run: bash tests/test-image-layout.sh
 
       - name: Resolve Mesa prebuilts Release
         id: mesa
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MESA_TAG: ${{ inputs.mesa_release_tag || 'latest' }}
         run: |
           set -euo pipefail
           REPO="${{ github.repository }}"
-          TAG="${{ github.event.inputs.mesa_release_tag || 'latest' }}"
+          TAG="$MESA_TAG"
           if [ "$TAG" = "latest" ]; then
             TAG="$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/$REPO/releases?per_page=40" \
-              | jq -r '[.[] | select(.tag_name|startswith("android-mesa-panthor-"))
+              | jq -r '[.[] | select(.draft == false) | select(.tag_name|startswith("android-mesa-panthor-"))
                         | select(any(.assets[]; .name=="android-mesa-panthor-prebuilts.tar.gz"))
                         | .tag_name][0]')"
           fi
@@ -123,11 +122,20 @@ jobs:
           echo "===== 镜像包 ====="; ls -lh "$WORK"/redroid-rk3588-panthor.tar.* 2>/dev/null || true
           docker images | grep -E 'redroid|REPOSITORY' || true
 
-      - name: Publish Release (image tarball + verify + log)
+      - name: Upload diagnostic logs
         if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: redroid-image-logs-${{ github.run_attempt }}
+          path: |
+            ${{ github.workspace }}/work-image/build.log
+            ${{ github.workspace }}/work-image/verify-image.txt
+          if-no-files-found: warn
+
+      - name: Publish Release (verified image only)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: redroid-image-${{ github.run_number }}
+          tag_name: redroid-image-${{ github.run_number }}-${{ github.run_attempt }}
           name: reDroid RK3588 Panthor image run ${{ github.run_number }}.${{ github.run_attempt }}
           body: |
             `redroid-rk3588-panthor`：上游 reDroid arm64 镜像 + Panthor 版 Mesa/PanVK/GBM（drop-in 替换）。

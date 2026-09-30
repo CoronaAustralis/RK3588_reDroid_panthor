@@ -1,5 +1,7 @@
 # redroid-rk3588-panthor 镜像构建
 
+首次在 Fork 构建，请先阅读 [构建顺序与 GBM 修复说明](FORK-BUILD.md)。
+
 产出「可用的 reDroid 镜像」：**上游 reDroid arm64 镜像** + **交叉构建的 Panthor 版
 Mesa/PanVK/GBM**（本仓库 `android-mesa` workflow 的 Release 产物）**drop-in 替换**。
 
@@ -37,9 +39,10 @@ Bionic 链接器行为，做如下对齐：
 | 源（run #N 产物）                | 注入到镜像                     | 手法 / 依据 |
 |----------------------------------|--------------------------------|-------------|
 | `lib/egl/libEGL_mesa.so*` 等     | `/vendor/lib64/egl/`（原样）   | `ro.hardware.egl=mesa` |
-| `lib/dri/libgallium_dri.so`+软链 | `/vendor/lib64/dri/`（原样）   | 含 panfrost + panthor KMD |
+| `lib/dri/libgallium_dri.so`+软链 | `/vendor/lib64/dri/`，并在 `lib64/` 根目录添加相对链接 | 供 EGL/GBM 按依赖名加载 |
+| `lib/gbm/dri_gbm.so` | `/vendor/lib64/gbm/dri_gbm.so` | GBM 动态后端，必须与 libgbm/Gallium 同次构建 |
 | `lib/hw/libvulkan_panfrost.so`   | `/vendor/lib64/hw/vulkan.panfrost.so` | **改名**：Android Vulkan loader 按路径 `dlopen(/vendor/lib64/hw/vulkan.<ro.hardware.vulkan>.so)`，SONAME 不参与 |
-| `lib/libgbm_mesa.so.1.0.0`（SONAME=`libgbm_mesa.so.1`） | `/vendor/lib64/libgbm.so.1.0.0`（SONAME→`libgbm.so.1`）+ 软链 `libgbm.so.1`/`libgbm.so` | **patchelf 改 SONAME**：上游 `gralloc.gbm.so` DT_NEED `libgbm.so.1`；本 Mesa 栈内无任何库 DT_NEED libgbm，故 libgbm 是纯叶子，改名安全 |
+| `lib/libgbm_mesa.so.1.0.0`（SONAME=`libgbm_mesa.so.1`） | `/vendor/lib64/libgbm.so.1.0.0`（SONAME→`libgbm.so.1`）+ 软链 `libgbm.so.1`/`libgbm.so` | **patchelf 改 SONAME**：上游 `gralloc.gbm.so` DT_NEED `libgbm.so.1`；同步改写 `dri_gbm.so` 等注入库的旧 GBM 依赖 |
 | `lib/libdrm.so`（SONAME=`libdrm.so`） | `/vendor/lib64/libdrm.so` + 别名软链 `libdrm.so.2` | Bionic 按 realpath 去重，两名解析到同一 soinfo，单实例无双份全局态 |
 | `lib/libc++_shared.so`           | `/vendor/lib64/libc++_shared.so`（原样） | NDK 运行时 |
 | panthor 版 `gpu_config.sh`       | `/vendor/bin/gpu_config.sh`(0755) | 覆盖上游只认 panfrost 的版本 |
@@ -90,7 +93,7 @@ Checkout → 装工具（patchelf/binutils/zstd/jq）→ 解析最新 Mesa Relea
 → 推 GHCR（`ghcr.io/<owner>/redroid-rk3588-panthor:<tag>` + `latest`）→ 发布 Release
 （`docker save` 包 + `verify-image.txt` + `build.log`）。
 
-触发：push 到 `main` 且改动 `redroid-image/**` 或本 workflow；或 Actions 页手动 Run workflow。
+触发：先完成本仓库的 Mesa Release，再在 Actions 页手动运行镜像 workflow，并指定该 Release tag。
 
 ## 在板上运行
 

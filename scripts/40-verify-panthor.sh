@@ -32,6 +32,7 @@ bad()  { FAIL=$((FAIL+1)); printf '  \033[1;31mFAIL\033[0m %s\n' "$*"; }
 wrn()  { WARN=$((WARN+1)); printf '  \033[1;33mWARN\033[0m %s\n' "$*"; }
 
 DRI="$DST/lib/dri/libgallium_dri.so"
+GBM_BACKEND="$DST/lib/gbm/dri_gbm.so"
 VK="$DST/lib/hw/libvulkan_panfrost.so"
 EGL="$(ls "$DST"/lib/egl/libEGL_mesa.so* 2>/dev/null | head -1)"
 # android(SDK>=30) 下 gbm 名为 libgbm_mesa.so*；libdrm 为无版本 libdrm.so。用通配解析实际文件，勿写死。
@@ -39,7 +40,7 @@ GBM="$(ls "$DST"/lib/libgbm*.so* 2>/dev/null | head -1)"
 LIBDRM="$(ls "$DST"/lib/libdrm.so* 2>/dev/null | head -1)"
 
 echo "==================== 1. 产物存在性 ===================="
-for f in "$DRI" "$VK" "$EGL" "$GBM" "$LIBDRM"; do
+for f in "$DRI" "$VK" "$EGL" "$GBM" "$LIBDRM" "$GBM_BACKEND"; do
   if [ -n "$f" ] && [ -e "$f" ]; then ok "存在 $(basename "$f")"; else bad "缺失产物：${f:-（EGL/GBM/libdrm 通配未匹配到）}"; fi
 done
 [ -e "$DST/lib/dri/panfrost_dri.so" ] && ok "存在 panfrost_dri.so（gallium 驱动软链）" \
@@ -60,13 +61,14 @@ check_elf() {
   case "$typ"   in *DYN*) ok "$name: Type=DYN(共享对象)";; *) wrn "$name: Type=$typ";; esac
 }
 check_elf "$DRI"; check_elf "$VK"; check_elf "$EGL"; check_elf "$GBM"
+check_elf "$GBM_BACKEND"
 
 echo "==================== 3. Panthor KMD（清单 6.2 line270 核心）===================="
 check_panthor() {
   local f="$1"; local name; name="$(basename "$f")"
   [ -e "$f" ] || { bad "跳过 panthor 校验（不存在）：$f"; return; }
   # 3a. .rodata 里的独立 "panthor" 驱动名（分派表 strcmp 用）——即便 strip 也在
-  if strings -a "$f" | grep -qx 'panthor'; then
+  if strings -a "$f" | grep -x 'panthor' >/dev/null; then
     ok "$name: 含独立字符串 \"panthor\"（KMD 分派表）"
   else
     bad "$name: 未找到独立 \"panthor\" 字符串 —— 可能只编进了旧 panfrost_kmod"
@@ -75,13 +77,13 @@ check_panthor() {
   local nk; nk="$(strings -a "$f" | grep -c 'panthor_kmod' || true)"
   if [ "${nk:-0}" -gt 0 ]; then ok "$name: 含 panthor_kmod* 字符串 x$nk"; else wrn "$name: 无 panthor_kmod* 串（可能被内联/精简）"; fi
   # 3c. 符号表（未 strip 时）：panthor_kmod_ops / panthor_kmod_dev_create
-  if readelf -sW "$f" 2>/dev/null | grep -qE 'panthor_kmod_ops|panthor_kmod_dev_create'; then
+  if readelf -sW "$f" 2>/dev/null | grep -E 'panthor_kmod_ops|panthor_kmod_dev_create' >/dev/null; then
     ok "$name: 符号表含 panthor_kmod_ops/dev_create"
   else
     wrn "$name: 符号表未见 panthor_kmod_*（若已 strip 属正常，以字符串判据为准）"
   fi
   # 3d. 反向确认：不能“只有 panfrost 没有 panthor”
-  if strings -a "$f" | grep -qx 'panfrost' && ! strings -a "$f" | grep -qx 'panthor'; then
+  if strings -a "$f" | grep -x 'panfrost' >/dev/null && ! strings -a "$f" | grep -x 'panthor' >/dev/null; then
     bad "$name: 只有 \"panfrost\" 而无 \"panthor\" —— 正是清单警告的旧 KMD 情形"
   fi
 }
@@ -105,11 +107,18 @@ check_needed() {
   ok "$name: 未见 glibc 专有 SONAME"
 }
 check_needed "$DRI"; check_needed "$VK"; check_needed "$EGL"
+check_needed "$GBM_BACKEND"
+if readelf --dyn-syms -W "$GBM_BACKEND" 2>/dev/null |
+    awk '$5 == "GLOBAL" && $6 == "DEFAULT" && $7 != "UND" && $8 ~ /^gbmint_get_backend(@|$)/ { found=1 } END { exit !found }'; then
+  ok "dri_gbm.so 导出 gbmint_get_backend"
+else
+  bad "dri_gbm.so 缺动态后端入口"
+fi
 
 echo "==================== 5. GBM 导出符号（gralloc.gbm 需要）===================="
 if [ -n "$GBM" ] && [ -e "$GBM" ]; then
   for sym in gbm_create_device gbm_bo_create gbm_bo_get_fd gbm_surface_create; do
-    readelf -sW "$GBM" 2>/dev/null | grep -q "$sym" \
+    readelf -sW "$GBM" 2>/dev/null | grep "$sym" >/dev/null \
       && ok "$(basename "$GBM") 导出 $sym" || wrn "$(basename "$GBM") 未见 $sym（可能版本差异/已 strip）"
   done
 fi

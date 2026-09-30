@@ -137,6 +137,7 @@ STAGE_LIB="$STAGE$PREFIX/$LIBDIR"
 expect_found() { find "$1" -name "$2" 2>/dev/null | grep -q . || die "预期产物缺失：$2（$3）"; }
 expect_found "$STAGE"     'libgallium_dri.so' "gallium megadriver 未构建"
 expect_found "$STAGE_LIB" 'libgbm*.so*'       "GBM 未构建（android 名应为 libgbm_mesa.so*）"
+expect_found "$STAGE_LIB/gbm" 'dri_gbm.so'    "GBM DRI 动态后端未构建"
 ls "$STAGE_LIB"/libEGL_mesa.so*        >/dev/null 2>&1 || die "缺 libEGL_mesa.so（egl-lib-suffix 未生效？）"
 ls "$STAGE_LIB"/libGLESv2_mesa.so*     >/dev/null 2>&1 || die "缺 libGLESv2_mesa.so"
 ls "$STAGE_LIB"/libvulkan_panfrost.so* >/dev/null 2>&1 || die "缺 libvulkan_panfrost.so（PanVK 未构建？）"

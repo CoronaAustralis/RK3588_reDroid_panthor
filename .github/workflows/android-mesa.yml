@@ -11,7 +11,7 @@ name: android-mesa-panthor-build
 # 本仓库即 android-mesa 独立脚手架仓库：脚手架内容位于仓库根，故 env.SCAFFOLD_DIR='.'；
 # 本 workflow 已置于生效位置 .github/workflows/，push 到 main 或手动 Run workflow 即触发。
 #
-# 每次运行都发布 public Release（成功->产物+校验报告+日志；失败->至少 build.log），
+# 仅成功并通过校验的构建发布 Release；失败日志保留在 Actions Artifacts，
 # 与 opi5max.yml 一致，便于无仓库权限时取回结果。
 # =============================================================================
 
@@ -19,13 +19,13 @@ on:
   workflow_dispatch:
     inputs:
       route:
-        description: '构建路线：full=生产(android platform+AOSP垫片)；smoke=工具链冒烟(android-stub)'
+        description: 'stub=NDK 标准构建（推荐）；full=需要完整 AOSP 头文件'
         required: true
-        default: 'full'
+        default: 'stub'
         type: choice
         options:
+          - stub
           - full
-          - smoke
       gallium_drivers:
         description: 'gallium 驱动（逗号分隔）'
         required: false
@@ -53,7 +53,7 @@ env:
 jobs:
   build:
     name: Android arm64 Mesa + PanVK + GBM (Panthor)
-    runs-on: ubuntu-latest          # x86_64；NDK 交叉编译，无需 arm runner
+    runs-on: ubuntu-24.04          # x86_64；NDK 交叉编译，无需 arm runner
     timeout-minutes: 180
     steps:
       - name: Checkout
@@ -131,12 +131,12 @@ jobs:
           ./scripts/build-all.sh 2>&1 | tee "$WORK/build.log"
 
       - name: Verify Panthor KMD / ABI / deps (清单 6.2 line270)
-        if: always()
         env:
           WORK: ${{ github.workspace }}/work
         run: |
           cd "$SCAFFOLD_DIR"
-          ./scripts/40-verify-panthor.sh 2>&1 | tee "$WORK/verify-panthor.txt" || true
+          set -o pipefail
+          bash scripts/40-verify-panthor.sh 2>&1 | tee "$WORK/verify-panthor.txt"
 
       - name: Summarize
         if: always()
@@ -164,25 +164,25 @@ jobs:
           retention-days: 30
 
       - name: Pack prebuilts tarball (for Release)
-        if: always()
         env:
           WORK: ${{ github.workspace }}/work
         run: |
-          cd "$WORK/out" 2>/dev/null || { echo "无产物可打包"; exit 0; }
-          tar -czf "$WORK/android-mesa-panthor-prebuilts.tar.gz" prebuilts 2>/dev/null || true
-          ls -lh "$WORK/android-mesa-panthor-prebuilts.tar.gz" 2>/dev/null || true
+          set -euo pipefail
+          cd "$WORK/out"
+          test -f prebuilts/arm64/lib/gbm/dri_gbm.so
+          tar -czf "$WORK/android-mesa-panthor-prebuilts.tar.gz" prebuilts
+          ls -lh "$WORK/android-mesa-panthor-prebuilts.tar.gz"
 
-      - name: Publish Release (public, retrievable without auth)
-        if: always()
+      - name: Publish Release (verified prebuilts only)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: android-mesa-panthor-${{ github.run_number }}
+          tag_name: android-mesa-panthor-${{ github.run_number }}-${{ github.run_attempt }}
           name: Android Mesa+PanVK+GBM (Panthor) run ${{ github.run_number }}.${{ github.run_attempt }}
           body: |
             Android arm64 Mesa(Panfrost gallium + PanVK + GBM + EGL/GLES) + libdrm 交叉构建产物。
 
             - Job conclusion: `${{ job.status }}`
-            - Route: `${{ github.event.inputs.route || 'full' }}`
+            - Route: `${{ github.event.inputs.route || 'stub' }}`
             - gallium/vulkan: `${{ github.event.inputs.gallium_drivers || 'panfrost' }}` / `${{ github.event.inputs.vulkan_drivers || 'panfrost' }}`
             - Commit: `${{ github.sha }}`
             - `verify-panthor.txt`: readelf/strings 校验（含 panthor KMD、arm64 ABI、NEEDED 洁净）

@@ -32,12 +32,11 @@ ok()   { echo -e "  \033[1;32mPASS\033[0m $*"; PASS=$((PASS+1)); }
 bad()  { echo -e "  \033[1;31mFAIL\033[0m $*"; FAIL=$((FAIL+1)); }
 info() { echo      "      $*"; }
 
-# 在 /vendor/lib64 树里按名解析一个 DT_NEEDED 名（含子目录 egl/dri/hw；跟随软链）
+# 裸 DT_NEEDED 只在 lib64 根目录检查，不把任意子目录误当成链接器搜索路径。
+# 带子目录的参数仅用于下面显式指定的文件检查；这不是完整的 Android namespace 模拟。
 resolve_in_vendor() {
-  local need="$1" p
-  for p in "$L64/$need" "$L64/egl/$need" "$L64/dri/$need" "$L64/hw/$need"; do
-    [ -e "$p" ] && { echo "$p"; return 0; }
-  done
+  local need="$1"
+  [ -f "$L64/$need" ] && { echo "$L64/$need"; return 0; }
   return 1
 }
 needed_list() { $READELF -d "$1" 2>/dev/null | sed -nE 's/.*\(NEEDED\).*\[(.+)\]/\1/p'; }
@@ -46,8 +45,9 @@ is_arm64()    { $READELF -h "$1" 2>/dev/null | grep -q 'Machine:.*AArch64'; }
 
 echo "==================== 1. 注入文件存在性 ===================="
 declare -A REQ=(
-  ["egl/libEGL_mesa.so"]=1 ["egl/libGLESv2_mesa.so"]=1
+  ["egl/libEGL_mesa.so"]=1 ["egl/libGLESv1_CM_mesa.so"]=1 ["egl/libGLESv2_mesa.so"]=1
   ["dri/libgallium_dri.so"]=1 ["dri/panfrost_dri.so"]=1
+  ["libgallium_dri.so"]=1 ["gbm/dri_gbm.so"]=1
   ["hw/vulkan.panfrost.so"]=1
   ["libgbm.so.1"]=1 ["libgbm.so.1.0.0"]=1 ["libdrm.so"]=1 ["libc++_shared.so"]=1
 )
@@ -56,7 +56,7 @@ for f in "${!REQ[@]}"; do
 done
 
 echo "==================== 2. ELF ABI（必须 arm64/Bionic）===================="
-for f in egl/libEGL_mesa.so dri/libgallium_dri.so hw/vulkan.panfrost.so libgbm.so.1.0.0 libdrm.so; do
+for f in egl/libEGL_mesa.so egl/libGLESv1_CM_mesa.so egl/libGLESv2_mesa.so dri/libgallium_dri.so gbm/dri_gbm.so hw/vulkan.panfrost.so libgbm.so.1.0.0 libdrm.so; do
   p="$(resolve_in_vendor "$f" || true)"; [ -n "$p" ] || continue
   if is_arm64 "$p"; then ok "$f: AArch64"; else bad "$f: 非 AArch64（误入宿主库？）"; fi
 done
@@ -108,15 +108,41 @@ else
 fi
 
 echo "==================== 7. 我们的 Mesa 库 LLVM-free ===================="
-for f in dri/libgallium_dri.so egl/libEGL_mesa.so hw/vulkan.panfrost.so libgbm.so.1.0.0; do
+for f in dri/libgallium_dri.so egl/libEGL_mesa.so hw/vulkan.panfrost.so libgbm.so.1.0.0 gbm/dri_gbm.so; do
   p="$(resolve_in_vendor "$f" || true)"; [ -n "$p" ] || continue
   if needed_list "$p" | grep -q 'libLLVM'; then bad "$f 仍 DT_NEED libLLVM"; else ok "$f 无 libLLVM 依赖"; fi
 done
 
+echo "==================== 8. 注入库依赖与 GBM 动态入口 ===================="
+while IFS= read -r -d '' p; do
+  # 不只检查上游 gralloc；EGL/GBM 后端自身的依赖也必须能按裸名称加载。
+  while IFS= read -r nd; do
+    mesa_family "$nd" || continue
+    if resolve_in_vendor "$nd" >/dev/null; then
+      ok "${p#"$L64/"} -> $nd"
+    else
+      bad "${p#"$L64/"} 的依赖不在 /vendor/lib64 搜索根目录: $nd"
+    fi
+  done < <(needed_list "$p")
+done < <(find "$L64/egl" "$L64/dri" "$L64/gbm" -maxdepth 1 -type f -name '*.so*' -print0 2>/dev/null)
+for p in "$L64/libgbm.so.1.0.0" "$L64/hw/vulkan.panfrost.so"; do
+  [ -f "$p" ] || continue
+  while IFS= read -r nd; do
+    mesa_family "$nd" || continue
+    resolve_in_vendor "$nd" >/dev/null || bad "${p#"$L64/"}: 未解析 $nd"
+  done < <(needed_list "$p")
+done
+if $READELF --dyn-syms -W "$L64/gbm/dri_gbm.so" 2>/dev/null |
+    awk '$5 == "GLOBAL" && $6 == "DEFAULT" && $7 != "UND" && $8 ~ /^gbmint_get_backend(@|$)/ { found=1 } END { exit !found }'; then
+  ok "dri_gbm.so 导出 gbmint_get_backend"
+else
+  bad "dri_gbm.so 缺动态后端入口 gbmint_get_backend"
+fi
+
 echo "==================== 汇总 ===================="
 echo "  PASS=$PASS  FAIL=$FAIL"
 if [ "$FAIL" -eq 0 ]; then
-  echo -e "  \033[1;32m✅ 镜像校验通过：Mesa/PanVK/GBM 已按上游命名注入，含 Panthor KMD，drop-in 依赖闭合。\033[0m"
+  echo -e "  \033[1;32m✅ 静态校验通过：Mesa 系依赖路径和 GBM 后端已检查；仍需在 Panthor 宿主上验证启动与硬件加速。\033[0m"
   exit 0
 else
   echo -e "  \033[1;31m❌ 有 $FAIL 项未过；见上。\033[0m"

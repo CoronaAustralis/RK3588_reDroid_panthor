@@ -20,8 +20,7 @@
 #   * GBM      : libgbm_mesa.so.1.0.0(SONAME=libgbm_mesa.so.1)
 #                -> /vendor/lib64/libgbm.so.1.0.0，并用 patchelf 把 SONAME 改为 libgbm.so.1，
 #                   再建软链 libgbm.so.1 / libgbm.so。上游 gralloc.gbm.so DT_NEEDED=libgbm.so.1；
-#                   本 Mesa 栈内无任何库 DT_NEED libgbm（EGL/gallium/vulkan 的 NEEDED 均不含），故 libgbm 是
-#                   纯叶子，改 SONAME 安全。mesa 仅因 platform-sdk-version>=30 才把 gbm 命名为 gbm_mesa
+#                   dri_gbm.so 的 DT_NEEDED 也必须同步改名。mesa 因 platform-sdk-version>=30 把 gbm 命名为 gbm_mesa
 #                   （src/gbm/meson.build:20-22），API33 无法回避，故在此对齐上游 libgbm.so.1。
 #   * libdrm   : libdrm.so(SONAME=libdrm.so，Android 约定无版本号) -> /vendor/lib64/libdrm.so，
 #                另建别名软链 libdrm.so.2 -> libdrm.so（上游保留二进制可能 DT_NEED libdrm.so.2）。
@@ -42,11 +41,12 @@ have() { command -v "$1" >/dev/null 2>&1; }
 SRC="${1:-}"; OUT="${2:-}"; GPUCFG="${3:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gpu_config.sh}"
 [ -n "$SRC" ] && [ -n "$OUT" ] || die "用法：inject-mesa.sh <prebuilts_arm64_dir> <overlay_out_dir> [gpu_config.sh]"
 [ -d "$SRC/lib" ] || die "源目录无 lib/：$SRC"
+[ -f "$SRC/lib/gbm/dri_gbm.so" ] || die "Mesa 产物缺 lib/gbm/dri_gbm.so；请先用修复后的 Mesa workflow 重新构建，不能使用旧 Release"
 have patchelf || die "缺 patchelf（apt-get install patchelf / brew install patchelf）"
 
 V64="$OUT/vendor/lib64"
 rm -rf "$OUT"
-mkdir -p "$V64/egl" "$V64/dri" "$V64/hw" "$OUT/vendor/bin" "$OUT/vendor/etc/vulkan/icd.d"
+mkdir -p "$V64/egl" "$V64/dri" "$V64/gbm" "$V64/hw" "$OUT/vendor/bin" "$OUT/vendor/etc/vulkan/icd.d"
 
 # --- 1) EGL / GLES：原样连软链一起拷（-a 保留相对软链） ------------------------
 for f in "$SRC"/lib/egl/*; do [ -e "$f" ] || continue; cp -a "$f" "$V64/egl/"; done
@@ -57,6 +57,8 @@ log "EGL/GLES -> /vendor/lib64/egl : $(ls "$V64/egl" | tr '\n' ' ')"
 for f in "$SRC"/lib/dri/*; do [ -e "$f" ] || continue; cp -a "$f" "$V64/dri/"; done
 log "DRI -> /vendor/lib64/dri : $(ls "$V64/dri" | tr '\n' ' ')"
 [ -e "$V64/dri/libgallium_dri.so" ] || die "未产出 libgallium_dri.so"
+# sphal 的按名依赖搜索不会递归进入 dri/；保留一个可在 lib64 根目录解析的入口。
+ln -s dri/libgallium_dri.so "$V64/libgallium_dri.so"
 
 # --- 3) Vulkan HAL：libvulkan_panfrost.so -> vulkan.panfrost.so（改名） ---------
 VK_SRC="$(find "$SRC/lib/hw" -maxdepth 1 -name 'libvulkan_*.so' -type f | head -1)"
@@ -76,6 +78,22 @@ patchelf --set-soname libgbm.so.1 "$V64/libgbm.so.1.0.0"
 ln -sf libgbm.so.1.0.0 "$V64/libgbm.so.1"
 ln -sf libgbm.so.1.0.0 "$V64/libgbm.so"
 log "GBM  -> /vendor/lib64/libgbm.so.1.0.0  SONAME: $OLD_SONAME -> $(patchelf --print-soname "$V64/libgbm.so.1.0.0") (+ libgbm.so.1, libgbm.so)"
+
+# 动态后端与 libgbm/Gallium 必须来自同一份构建产物。
+for f in "$SRC"/lib/gbm/*_gbm.so; do
+  [ -e "$f" ] || continue
+  cp -a "$f" "$V64/gbm/"
+done
+# 改 libgbm 的 SONAME 后，更新所有注入 ELF 的旧依赖，不能只改库文件名。
+if [ -n "$OLD_SONAME" ] && [ "$OLD_SONAME" != '(none)' ] && [ "$OLD_SONAME" != libgbm.so.1 ]; then
+  while IFS= read -r -d '' f; do
+    needed="$(patchelf --print-needed "$f")"
+    if grep -Fxq "$OLD_SONAME" <<< "$needed"; then
+      patchelf --replace-needed "$OLD_SONAME" libgbm.so.1 "$f"
+    fi
+  done < <(find "$V64" -type f -name '*.so*' -print0)
+fi
+log "GBM backend -> /vendor/lib64/gbm/dri_gbm.so（依赖已对齐 libgbm.so.1）"
 
 # --- 5) libdrm：libdrm.so(SONAME=libdrm.so) + 别名 libdrm.so.2 ----------------
 DRM_REAL="$(find "$SRC/lib" -maxdepth 1 -name 'libdrm.so*' -type f | head -1)"

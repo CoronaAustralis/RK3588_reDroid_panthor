@@ -83,6 +83,10 @@ log "  GBM/glapi -> lib/"
 copy_libs "$STAGE_LIB" 'libgbm*.so*'   "$DST/lib"   # android(SDK>=30) 名为 libgbm_mesa.so.1.0.0
 copy_libs "$STAGE_LIB" 'libglapi.so*'  "$DST/lib"   # glapi 通常并入 libgallium_dri，无独立 .so 时为空，无妨
 
+# Mesa 的 GBM DRI 后端是独立动态库；只打包 libgbm 会导致 gbm_create_device 失败。
+[ -f "$STAGE_LIB/gbm/dri_gbm.so" ] || die "缺 GBM 后端：$STAGE_LIB/gbm/dri_gbm.so"
+copy_libs "$STAGE_LIB/gbm" '*_gbm.so' "$DST/lib/gbm"
+
 # ---- libdrm（我们在 10-build-libdrm.sh 装进 $SHIM）-> lib/ ----
 log "  libdrm -> lib/"
 copy_libs "$SHIM/lib" 'libdrm.so*' "$DST/lib"

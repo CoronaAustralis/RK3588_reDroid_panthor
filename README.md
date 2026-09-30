@@ -1,5 +1,7 @@
 # Android Mesa + PanVK + GBM 构建脚手架（reDroid / RK3588 Panthor）
 
+修复版 Fork 构建顺序与上板验证请见 [Fork 构建指南](redroid-image/FORK-BUILD.md)。
+
 本目录是移植清单
 [`OrangePi5Max_..._reDroid_移植清单.md`](../../OrangePi5Max_ubuntu-rockchip-optimized_Panthor_reDroid_移植清单.md)
 中 **6.1 / 6.2 / 6.3** 的“可在代码层落地”的构建脚手架：用 **NDK + meson 交叉编译**，
