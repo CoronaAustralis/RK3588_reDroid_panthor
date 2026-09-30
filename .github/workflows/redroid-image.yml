@@ -53,13 +53,13 @@ jobs:
         run: |
           set -x
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends patchelf binutils gcc zstd xz-utils curl jq
+          sudo apt-get install -y --no-install-recommends patchelf binutils gcc gcc-arm-linux-gnueabihf zstd xz-utils curl jq
           uname -m; docker version --format 'client={{.Client.Version}} server={{.Server.Version}}'
           patchelf --version; readelf --version | head -1
           docker buildx version || true
 
-      - name: Test packaging regressions (real arm64 ELF fixtures)
-        run: bash tests/test-image-layout.sh
+      - name: Test packaging regressions (real ARM32 and ARM64 ELF fixtures)
+        run: bash tests/test-dual-abi.sh
 
       - name: Resolve Mesa prebuilts Release
         id: mesa
@@ -145,7 +145,7 @@ jobs:
             - Mesa release: `${{ steps.mesa.outputs.tag }}`
             - Commit: `${{ github.sha }}`
             - GHCR: `${{ env.GHCR_IMAGE || '(未推送)' }}`
-            - `verify-image.txt`: 注入后 /vendor 校验（含 Panthor KMD、arm64 ABI、libgbm SONAME、drop-in 依赖闭合）
+            - `verify-image.txt`: 注入后 /vendor 校验（含 Panthor KMD、ARM64/ARM32 ABI、libgbm SONAME、drop-in 依赖闭合）
             - `build.log`: 完整构建日志（base /vendor 探测 + inject + build + verify；失败时也在）
             - `redroid-rk3588-panthor.tar.zst`: `docker save` 镜像包（成功时；`zstd -d | docker load`）
 

@@ -31,12 +31,12 @@ source "$SCAFFOLD/VERSIONS.env"
 MESA_LOCAL_DIR="${MESA_LOCAL_DIR:-$REPO_ROOT/mesa-current}"
 
 SRC="$WORK/src"                 # 源码（mesa 全量 / libdrm 解包）
-SHIM="$WORK/sysroot"            # 垫片 sysroot
+SHIM="$WORK/sysroot-$TARGET_ARCH"            # 垫片 sysroot
 SHIM_INCLUDE="$SHIM/include"
 SHIM_LIB="$SHIM/lib"
 SHIM_PC="$SHIM/lib/pkgconfig"
 CROSS_FILE="$SHIM/cross-android-${MESON_CPU_FAMILY}.ini"
-STAGE="$WORK/stage"             # meson install 的 DESTDIR 暂存
+STAGE="$WORK/stage-$TARGET_ARCH"             # meson install 的 DESTDIR 暂存
 OUT="$WORK/out"                 # 最终 device_redroid-prebuilts 布局
 # 原生(host x86_64)构建的 CLC 代码生成工具安装前缀（见 15-build-native-clc-tools.sh）：
 #   mesa_clc / vtn_bindgen2 / panfrost_compile —— 仅在【构建期】把 libpan/*.cl 编成

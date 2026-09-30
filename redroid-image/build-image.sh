@@ -8,7 +8,7 @@
 #       -> inject-mesa.sh 生成 overlay -> docker build -> 导出 /vendor 校验 -> docker save。
 #
 # 环境变量：
-#   MESA_SRC     Mesa 产物：.tar.gz 路径 / 含 prebuilts/arm64 的目录 / Release 直链URL（必填）
+#   MESA_SRC     Mesa 产物：.tar.gz 路径 / 含 prebuilts/{arm64,arm} 的目录 / Release 直链URL（必填）
 #   BASE_IMAGE   基座镜像            (默认 redroid/redroid:13.0.0-latest)
 #   OUT_IMAGE    产出镜像 tag        (默认 redroid-rk3588-panthor:lineage-20)
 #   WORK         工作目录            (默认 ./.work-image)
@@ -35,10 +35,8 @@ READELF="$(command -v readelf || command -v llvm-readelf || true)"; [ -n "$READE
 
 mkdir -p "$WORK"
 
-# --- 1) 解析 Mesa 产物 -> $ARM64（含 lib/egl 的目录）--------------------------
-# 统一解包/拷贝到 $EXTRACT，再按 lib/egl 定位 arm64 目录，兼容任意嵌套深度：
-#   Release tarball 内是 prebuilts/arm64/lib/egl/...（android-mesa.yml 从 out/ 打包 prebuilts），
-#   直接给目录时可能是 .../arm64 或 .../arm64/lib/egl 的上层，故不按固定路径猜。
+# --- 1) Extract the dual-ABI bundle; require exact arm64/arm directory names ---
+# Accept an archive or a directory containing both prebuilts/arm64 and prebuilts/arm.
 EXTRACT="$WORK/extract"; rm -rf "$EXTRACT"; mkdir -p "$EXTRACT"
 case "$MESA_SRC" in
   http://*|https://*)
@@ -54,12 +52,14 @@ case "$MESA_SRC" in
       tar -xzf "$MESA_SRC" -C "$EXTRACT"
     else die "MESA_SRC 既非 URL 也不存在：$MESA_SRC"; fi ;;
 esac
-EGLDIR="$(find "$EXTRACT" -maxdepth 6 -type d -name egl -path '*/lib/egl' 2>/dev/null | head -1)"
-[ -n "$EGLDIR" ] || die "解析后未找到 */lib/egl 目录（Mesa 产物布局不符）"
-ARM64="$(dirname "$(dirname "$EGLDIR")")"   # 去掉尾部 /lib/egl
-[ -d "$ARM64/lib/egl" ] || die "定位异常：$ARM64/lib/egl 不存在"
-[ -f "$ARM64/lib/gbm/dri_gbm.so" ] || die "Mesa Release 缺 lib/gbm/dri_gbm.so；请先重新构建本仓库的 Mesa 产物"
-log "Mesa arm64 产物就绪：$ARM64"
+declare -A PREBUILTS
+for arch in arm64 arm; do
+  mapfile -t matches < <(find "$EXTRACT" -maxdepth 6 -type d -name "$arch" -exec test -d '{}/lib/egl' \; -print)
+  [ "${#matches[@]}" -eq 1 ] || die "Expected exactly one prebuilts/$arch directory; rebuild the dual-ABI Mesa Release"
+  PREBUILTS[$arch]="${matches[0]}"
+  [ -f "${matches[0]}/lib/gbm/dri_gbm.so" ] || die "$arch: missing lib/gbm/dri_gbm.so; rebuild Mesa"
+  log "Mesa $arch: ${matches[0]}"
+done
 
 # --- 2) 拉 base 镜像（arm64）-------------------------------------------------
 log "docker pull --platform linux/arm64 $BASE_IMAGE"
@@ -107,7 +107,9 @@ fi
 
 # --- 4) inject-mesa.sh 生成 overlay 到构建上下文 -----------------------------
 CTX="$WORK/ctx"; rm -rf "$CTX"; mkdir -p "$CTX"
-bash "$HERE/inject-mesa.sh" "$ARM64" "$CTX/overlay" "$GPU_CONFIG"
+for arch in arm64 arm; do
+  bash "$HERE/inject-mesa.sh" "${PREBUILTS[$arch]}" "$CTX/overlay" "$GPU_CONFIG" "$arch"
+done
 
 # --- 5) 渲染 Dockerfile ------------------------------------------------------
 # 只用 sed 替换 BASE_IMAGE（docker 镜像引用不含 '|'，故 '|' 作分隔符安全）；

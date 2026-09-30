@@ -83,11 +83,10 @@ log "  libdrm.pc : $(grep -m1 '^Version:' "$SHIM_PC/libdrm.pc")"
 if command -v readelf >/dev/null 2>&1; then
   machine="$(readelf -h "$LIBDRM_SO" | awk -F: '/Machine:/{gsub(/^ +/,"",$2);print $2}')"
   log "  $(basename "$LIBDRM_SO") Machine = $machine"
-  # readelf 对 arm64 精确输出 "AArch64"（大小写混合）；统一转小写再匹配，避免大小写漏配（run #4 的坑）
-  case "$(printf '%s' "$machine" | tr '[:upper:]' '[:lower:]')" in
-    *aarch64*|*arm64*) : ;;
-    *) die "libdrm 不是 arm64（Machine=$machine），cross-file 有误";;
-  esac
+  class="$(readelf -h "$LIBDRM_SO" | awk '/Class:/{print $2}')"
+  [ "$machine" = "$ELF_MACHINE" ] && [ "$class" = "$ELF_CLASS" ] \
+    || die "libdrm ABI mismatch: $class/$machine, expected $ELF_CLASS/$ELF_MACHINE"
+
 fi
 
 log "libdrm 完成。下一步：scripts/20-build-mesa.sh"

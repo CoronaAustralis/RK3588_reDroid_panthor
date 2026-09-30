@@ -23,7 +23,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 need readelf
 need strings
 
-DST="${1:-$OUT/$PREBUILT_LAYOUT_ARM64}"
+DST="${1:-$OUT/$PREBUILT_LAYOUT}"
 [ -d "$DST" ] || die "产物目录不存在：$DST（先跑 30-package-prebuilts.sh）"
 
 PASS=0; FAIL=0; WARN=0
@@ -46,7 +46,7 @@ done
 [ -e "$DST/lib/dri/panfrost_dri.so" ] && ok "存在 panfrost_dri.so（gallium 驱动软链）" \
   || bad "缺 panfrost_dri.so 软链（Android.mk 靠 find -type l 识别）"
 
-echo "==================== 2. ELF ABI（必须 arm64/Bionic）===================="
+echo "==================== 2. ELF ABI（必须 $TARGET_ARCH/Bionic）===================="
 check_elf() {
   local f="$1"; [ -e "$f" ] || { bad "跳过 ABI（不存在）：$f"; return; }
   local hdr; hdr="$(readelf -h "$f")"
@@ -55,13 +55,12 @@ check_elf() {
   mach="$(echo "$hdr"  | awk -F: '/Machine:/{gsub(/^ +/,"",$2);print $2}')"
   typ="$(echo "$hdr"   | awk -F: '/Type:/{gsub(/^ +/,"",$2);print $2}')"
   local name; name="$(basename "$f")"
-  case "$class" in *ELF64*) ok "$name: ELF64";; *) bad "$name: Class=$class（应 ELF64）";; esac
-  # readelf 对 arm64 精确输出 "AArch64"（大小写混合）；转小写再匹配，避免大小写漏配
-  case "$(printf '%s' "$mach" | tr '[:upper:]' '[:lower:]')" in *aarch64*|*arm64*) ok "$name: Machine=$mach";; *) bad "$name: Machine=$mach（应 AArch64，疑似宿主架构泄漏）";; esac
+  [ "$class" = "$ELF_CLASS" ] && ok "$name: $class" || bad "$name: Class=$class (expected $ELF_CLASS)"
+  [ "$mach" = "$ELF_MACHINE" ] && ok "$name: $mach" || bad "$name: Machine=$mach (expected $ELF_MACHINE)"
   case "$typ"   in *DYN*) ok "$name: Type=DYN(共享对象)";; *) wrn "$name: Type=$typ";; esac
 }
 check_elf "$DRI"; check_elf "$VK"; check_elf "$EGL"; check_elf "$GBM"
-check_elf "$GBM_BACKEND"
+while IFS= read -r -d '' f; do check_elf "$f"; done < <(find "$DST/lib" -type f -name '*.so*' -print0)
 
 echo "==================== 3. Panthor KMD（清单 6.2 line270 核心）===================="
 check_panthor() {
@@ -126,7 +125,7 @@ fi
 echo "==================== 汇总 ===================="
 printf '  PASS=%d  FAIL=%d  WARN=%d\n' "$PASS" "$FAIL" "$WARN"
 if [ "$FAIL" -eq 0 ]; then
-  echo "  ✅ 校验通过：产物为 arm64/Bionic，含 Panthor KMD，依赖洁净。"
+  echo "  ✅ 校验通过：产物为 $TARGET_ARCH/Bionic，含 Panthor KMD，依赖洁净。"
   exit 0
 else
   echo "  ❌ 存在 FAIL 项，勿用于打包/上板。"

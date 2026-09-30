@@ -1,8 +1,8 @@
 # =============================================================================
-# Meson cross-file 模板 —— Android arm64 (Bionic) via NDK LLVM 工具链
+# Meson cross-file 模板 —— Android ARM64/ARM32 (Bionic) via NDK LLVM 工具链
 # =============================================================================
 # 由 scripts/gen-android-sysroot.sh 渲染（替换 @...@ 占位符）后写入
-#   $WORK/sysroot/cross-android-aarch64.ini
+#   $WORK/sysroot-<arch>/cross-android-<cpu_family>.ini
 # 参考：remote-android/mesa .gitlab-ci/container/create-android-cross-file.sh
 #       （此处升级为现代 NDK 统一 clang --target 写法，不再用 <arch>29-clang 包装器）
 #

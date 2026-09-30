@@ -77,7 +77,7 @@ if [ "$ANDROID_STUB" = "1" ]; then ANDROID_STUB_OPT=true; else ANDROID_STUB_OPT=
 
 # 安装布局对齐设备 /vendor/lib64（DESTDIR 暂存到 $STAGE）
 PREFIX=/vendor
-LIBDIR=lib64
+LIBDIR="$VENDOR_LIBDIR"
 DRI_PATH="$PREFIX/$LIBDIR/dri"
 ICD_PATH="$PREFIX/etc/vulkan/icd.d"
 

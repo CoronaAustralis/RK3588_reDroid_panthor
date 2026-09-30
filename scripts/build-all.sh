@@ -33,6 +33,6 @@ for step in $STEPS; do
   esac
 done
 
-log "全部完成。产物：${PREBUILTS_DST:-$OUT/$PREBUILT_LAYOUT_ARM64}"
+log "全部完成。产物：${PREBUILTS_DST:-$OUT/$PREBUILT_LAYOUT}"
 log "把该目录内容并入 device_redroid-prebuilts/prebuilts/arm64/（保留其 gralloc.gbm/HWC 等原样），"
 log "再按 upstream 流程编 LineageOS 20 / reDroid 镜像即可（清单 6.1/6.3）。"

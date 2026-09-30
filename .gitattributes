@@ -2,3 +2,4 @@
 *.yml text eol=lf
 *.tmpl text eol=lf
 *.env text eol=lf
+*.ini.in text eol=lf

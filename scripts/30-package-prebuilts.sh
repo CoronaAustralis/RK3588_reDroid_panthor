@@ -25,11 +25,11 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
 resolve_ndk
 
-PREFIX=/vendor; LIBDIR=lib64
+PREFIX=/vendor; LIBDIR="$VENDOR_LIBDIR"
 STAGE_LIB="$STAGE$PREFIX/$LIBDIR"
 [ -d "$STAGE_LIB" ] || die "缺 Mesa 安装产物：先跑 scripts/20-build-mesa.sh"
 
-DST="${PREBUILTS_DST:-$OUT/$PREBUILT_LAYOUT_ARM64}"
+DST="${PREBUILTS_DST:-$OUT/$PREBUILT_LAYOUT}"
 log "打包到：$DST"
 rm -rf "$DST"
 mkdir -p "$DST/lib/egl" "$DST/lib/dri" "$DST/lib/hw" "$DST/share/vulkan/icd.d"
@@ -122,7 +122,7 @@ libdrm     : ${LIBDRM_VERSION}
 NDK        : ${NDK_VERSION}  (API ${ANDROID_API})
 gallium    : ${GALLIUM_DRIVERS:-panfrost}
 vulkan     : ${VULKAN_DRIVERS:-panfrost} (PanVK)
-目标 ABI   : ${TARGET_ARCH} (aarch64-linux-android)
+目标 ABI   : ${TARGET_ARCH} (${NDK_TRIPLE})
 说明       : 仅含 Mesa/libdrm 派生库；gralloc.gbm/hwcomposer.redroid/audio/uinputd/
              vncserver 等沿用 device_redroid-prebuilts 上游原样，未在此覆盖。
 EOF

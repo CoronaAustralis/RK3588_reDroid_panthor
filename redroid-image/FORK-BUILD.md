@@ -1,6 +1,6 @@
 # Fork 后构建修复版镜像
 
-这条流程只编译 Android ARM64 Mesa/libdrm，再覆盖到上游预编译 reDroid 镜像；不编译 AOSP。
+这条流程编译 Android ARM64 和 ARM32 Mesa/libdrm，再覆盖到上游预编译 reDroid 镜像；不编译 AOSP。
 
 ## 构建顺序
 
@@ -12,7 +12,7 @@
    `android-mesa-panthor-<run>-<attempt>` 标签。
 4. 手动运行 `redroid-rk3588-panthor-image`，在 `mesa_release_tag` 中填入该标签。
    `latest` 只在当前 Fork 的 Releases 中选择，绝不会回退到原作者仓库。
-   若输入旧产物（没有 `lib/gbm/dri_gbm.so`），注入脚本会明确报错。
+   必须使用这次新构建的双 ABI 产物；缺少 `prebuilts/arm` 或任一 GBM 后端会直接报错。
 5. 构建成功后，从当前 Fork 的 GHCR 或 `redroid-image-<run>-<attempt>` Release 获取镜像。
    镜像失败时不发布 Release，诊断日志仍在 Actions Artifacts。
 
@@ -51,3 +51,21 @@ docker exec redroid-test logcat -b crash -d
 静态检查通过不等于 Android 已启动或硬件加速正常。必须确认 `sys.boot_completed=1`、
 SurfaceFlinger 使用目标 GPU 且没有反复崩溃。宿主还需要 Binder、Netfilter/iptables
 扩展和 dummy 等支持；此前的 `mark`、`CONNMARK`、`TCPMSS`、`dummy0` 错误属于另外的宿主兼容性问题。
+
+## ARM32 支持（32 位 OMX / 应用）
+
+一次 Mesa workflow 构建两套相同版本的 Panfrost、PanVK、EGL/GLES、GBM 后端、libdrm、NDK libc++。
+ARM64 安装到 `/vendor/lib64`，ARM32 安装到 `/vendor/lib`。源码与宿主 CLC 工具只构建/获取一次，
+两种 ABI 使用独立 sysroot、Mesa/libdrm 构建目录和安装目录，不需要编译整个 Android。
+通用 cross-file 模板根据 TARGET_ARCH 渲染；ARM32 使用 NDK `armv7a-linux-androideabi33`。
+单独调试一种 ABI 可执行 `TARGET_ARCH=arm bash scripts/build-all.sh`；双 ABI 使用
+`bash scripts/build-dual-abi.sh`。
+
+镜像工作流默认同时校验 ELF32/ARM 与 ELF64/AArch64，覆盖 NDK libc++，并用两种真实 ELF
+夹具验证 SONAME 改写、依赖搜索、错误 ABI 拒绝和 overlay 合并。Linux ARM64 上运行：
+`bash tests/test-dual-abi.sh`（需要 gcc、gcc-arm-linux-gnueabihf、binutils、patchelf）。
+这类夹具只验证打包逻辑，不能代替 NDK 完整编译或板上运行。
+
+重建镜像后先用 `scrcpy -s 192.168.5.70:5555 --no-audio` 验证画面持续更新，再检查日志是否仍有
+`GRALLOC-GBM: failed to create gbm device`。原镜像缺 Opus 编码器是另一问题；可使用 AAC 或禁用音频。
+Panthor 图形加速不代表已启用 Rockchip VPU 硬件视频编码，也不保证任意 32 位应用都能运行。
