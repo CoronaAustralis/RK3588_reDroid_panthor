@@ -52,6 +52,7 @@ resolve_ndk
 
 MESA_SRC="${MESA_SRC_DIR:-$SRC/mesa}"
 [ -f "$MESA_SRC/meson.build" ] || die "缺 Mesa 源码：先跑 scripts/00-fetch-sources.sh（或设 MESA_SRC_DIR）"
+verify_mesa_source "$MESA_SRC"
 [ -f "$CROSS_FILE" ]           || die "缺 cross-file：先跑 scripts/gen-android-sysroot.sh"
 [ -f "$SHIM_PC/libdrm.pc" ]    || die "缺 libdrm.pc：先跑 scripts/10-build-libdrm.sh"
 

@@ -69,3 +69,19 @@ ARM64 安装到 `/vendor/lib64`，ARM32 安装到 `/vendor/lib`。源码与宿�
 重建镜像后先用 `scrcpy -s 192.168.5.70:5555 --no-audio` 验证画面持续更新，再检查日志是否仍有
 `GRALLOC-GBM: failed to create gbm device`。原镜像缺 Opus 编码器是另一问题；可使用 AAC 或禁用音频。
 Panthor 图形加速不代表已启用 Rockchip VPU 硬件视频编码，也不保证任意 32 位应用都能运行。
+
+## Mesa 26.2.3 正式版对照测试
+
+当前固定到正式标签 `mesa-26.2.3` 对应的提交
+`31e9a6b2e95e30d84bf3177d1f497d063e59b6b2`，ARM32 与 ARM64 共用此版本。
+必须重新运行 Mesa workflow，成功后使用这次新 Release 组装镜像；旧 Release 不会自动升级。
+镜像工作流建议将 `mesa_release_tag` 指定为这次的完整标签，并将 `out_tag` 设为
+`mesa-26.2.3` 以便识别。工作流仍会同步推送 `latest`，对比用的旧镜像需提前保留其镜像 ID/标签。
+
+源码获取、宿主 CLC 和目标 Mesa 构建均检查 VERSION；Git 源码还检查固定 commit。
+本地复用旧 WORK 时会明确报错，不会悄悄继续编译旧版本，也不会自动丢弃源码改动。
+遇到版本不符时换一个新的 WORK 目录，或使用已检出固定提交的 MESA_SRC_DIR。
+
+启动后检查 `dumpsys SurfaceFlinger` 的 GLES 行应显示 `Mesa 26.2.3`，
+然后在同一游戏页面对比 Android 内部截图。正式版不保证能修复当前颜色异常；
+此切换用于排查开发版回归，仍需验证游戏画面和投屏帧率。

@@ -117,6 +117,7 @@ log "打包完成，清单："
 cat > "$DST/PACKAGE-INFO.txt" <<EOF
 Android Mesa + PanVK + GBM 预编译产物（脚手架生成）
 生成时间   : $(date -u +%Y-%m-%dT%H:%M:%SZ)
+Mesa version: ${MESA_VERSION}
 Mesa commit: ${MESA_COMMIT}
 libdrm     : ${LIBDRM_VERSION}
 NDK        : ${NDK_VERSION}  (API ${ANDROID_API})

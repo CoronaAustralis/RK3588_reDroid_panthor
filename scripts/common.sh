@@ -135,3 +135,16 @@ fetch_aosp_headers() {
   done
   log "  AOSP 头并入完成：$SHIM_INCLUDE"
 }
+
+# Do not silently reuse a cached development tree after changing the release pin.
+verify_mesa_source() {
+  local src="$1" actual_version actual_commit
+  [ -f "$src/VERSION" ] || die "Mesa VERSION missing: $src"
+  actual_version="$(tr -d '\r\n' < "$src/VERSION")"
+  [ "$actual_version" = "$MESA_VERSION" ] || die "Mesa version mismatch: $actual_version (expected $MESA_VERSION). Use a fresh WORK directory or an explicitly checked-out matching MESA_SRC_DIR."
+  if [ -e "$src/.git" ]; then
+    actual_commit="$(git -C "$src" rev-parse HEAD)"
+    [ "$actual_commit" = "$MESA_COMMIT" ] || die "Mesa commit mismatch: $actual_commit (expected $MESA_COMMIT). Use a fresh WORK directory or check out the pinned commit."
+  fi
+  log "Mesa source verified: $actual_version ($src)"
+}

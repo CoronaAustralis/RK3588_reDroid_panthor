@@ -61,6 +61,8 @@ else
   git -C "$MESA_SRC" checkout "$MESA_COMMIT"
 fi
 
+verify_mesa_source "$MESA_SRC"
+
 # 校验关键源文件确实存在（对应清单 6.2：必须含 panthor KMD 与 PanVK Android 集成）
 for f in \
   src/panfrost/lib/kmod/panthor_kmod.c \

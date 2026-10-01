@@ -44,6 +44,7 @@ need ninja
 
 MESA_SRC="${MESA_SRC_DIR:-$SRC/mesa}"
 [ -f "$MESA_SRC/meson.build" ] || die "缺 Mesa 源码：先跑 scripts/00-fetch-sources.sh"
+verify_mesa_source "$MESA_SRC"
 
 # 幂等：三个工具都在就跳过（重复跑 build-all 时省时间）
 if [ -x "$NATIVE_TOOLS_BIN/mesa_clc" ] && [ -x "$NATIVE_TOOLS_BIN/vtn_bindgen2" ] \
